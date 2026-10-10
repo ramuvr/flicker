@@ -426,3 +426,53 @@ test('bot check widget files are served from this site with security headers', a
   assert.strictEqual((await fetch(base + '/vendor/hash-wasm.js')).status, 404);
   assert.ok(usedChallenges.size > 0);
 });
+
+// ---------- HTTPS enforcement ----------
+
+const viaProxy = (proto, extra = {}) => ({ 'X-Forwarded-For': newIp(), 'X-Forwarded-Proto': proto, ...extra });
+
+test('plain HTTP page requests are redirected to HTTPS on the same host and path', async () => {
+  const res = await fetch(`${base}/s/AAAAAAAAAAAAAAAAAAAAAA?x=1`, { redirect: 'manual', headers: viaProxy('http') });
+  assert.strictEqual(res.status, 301);
+  assert.strictEqual(res.headers.get('location'), `https://127.0.0.1:${port}/s/AAAAAAAAAAAAAAAAAAAAAA?x=1`);
+  assert.ok(res.headers.get('strict-transport-security'));
+  const home = await fetch(base + '/', { redirect: 'manual', headers: viaProxy('http') });
+  assert.strictEqual(home.status, 301);
+});
+
+test('plain HTTP API writes are refused, not redirected, and store nothing', async () => {
+  const before = store.size;
+  const res = await fetch(base + '/api/secrets', {
+    method: 'POST', redirect: 'manual',
+    headers: { 'Content-Type': 'application/json', ...viaProxy('http') },
+    body: JSON.stringify({ data: CT, ttl: 3600, altcha: await solvedPayload() }),
+  });
+  assert.strictEqual(res.status, 403);
+  assert.strictEqual(store.size, before);
+
+  const id = await newSecret();
+  const read = await fetch(`${base}/api/secrets/${id}`, { method: 'POST', redirect: 'manual', headers: { 'Content-Type': 'application/json', ...viaProxy('http') }, body: '{}' });
+  assert.strictEqual(read.status, 403);
+  assert.strictEqual(store.has(id), true, 'secret not burned over HTTP');
+});
+
+test('HTTPS requests, health probes and direct local requests are served normally', async () => {
+  assert.strictEqual((await fetch(base + '/', { redirect: 'manual', headers: viaProxy('https') })).status, 200);
+  assert.strictEqual((await fetch(base + '/healthz', { redirect: 'manual', headers: viaProxy('http') })).status, 200);
+  assert.strictEqual((await fetch(base + '/', { redirect: 'manual' })).status, 200, 'no proxy header: local development');
+});
+
+test('a client cannot forge "https" ahead of the proxy-appended scheme', async () => {
+  const res = await fetch(base + '/', { redirect: 'manual', headers: viaProxy('https, http') });
+  assert.strictEqual(res.status, 301);
+});
+
+test('a malformed Host header is rejected instead of being echoed into a redirect', async () => {
+  const status = await new Promise((resolve) => {
+    http.get({ host: '127.0.0.1', port, path: '/', headers: { Host: 'evil.example/<x>', 'X-Forwarded-Proto': 'http' } }, (r) => {
+      r.resume();
+      resolve(r.statusCode);
+    }).on('error', () => resolve('error'));
+  });
+  assert.strictEqual(status, 400);
+});
