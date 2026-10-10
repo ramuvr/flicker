@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="referrer" content="no-referrer">
+  <meta name="robots" content="noindex, nofollow">
+  <title>Data Collection Policy - One-Time Secret</title>
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <main class="legal">
+    <h1>Data Collection Policy</h1>
+    <p class="muted">Effective date: {{EFFECTIVE_DATE}}</p>
+    <p>This page lists every piece of information the service handles, where it is kept and for how long. It supplements the <a href="/privacy" target="_blank" rel="noopener noreferrer">Privacy Policy</a>. Operator: {{OPERATOR_NAME}}.</p>
+
+    <h2>1. Data the service handles</h2>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr><th scope="col">Data</th><th scope="col">Purpose</th><th scope="col">Where</th><th scope="col">Kept for</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>Encrypted secret (up to about 256 KB)</td><td>Deliver the secret to the recipient</td><td>Server memory only (never disk)</td><td>Until first view or chosen expiry (1 hour, 1 day or 7 days), whichever is first. Also erased if the server restarts.</td></tr>
+          <tr><td>Random link ID (128-bit)</td><td>Find the encrypted secret</td><td>Server memory only</td><td>Same as the secret</td></tr>
+          <tr><td>Expiry time</td><td>Delete the secret on time</td><td>Server memory only</td><td>Same as the secret</td></tr>
+          <tr><td>IP address (IPv6: first 64 bits) and request count</td><td>Rate limiting to prevent abuse</td><td>Server memory only</td><td>About 1 to 2 minutes</td></tr>
+          <tr><td>Bot check: random challenge ID (no personal data)</td><td>Stop a solved check being reused to create more secrets</td><td>Server memory only</td><td>Up to 10 minutes</td></tr>
+          <tr><td>Connection data handled by the hosting provider</td><td>Delivering traffic, network security</td><td>{{HOSTING}}</td><td>Per the provider's terms; any platform access logs we enable: up to {{LOG_RETENTION}}</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <h2>2. Data the service never receives or stores</h2>
+    <ul>
+      <li>Your secret in readable form, or the decryption key (the part of the link after <code>#</code>).</li>
+      <li>Names, email addresses, phone numbers, accounts or passwords.</li>
+      <li>Cookies, local storage, tracking pixels, analytics or advertising identifiers.</li>
+      <li>Third-party scripts, fonts or embeds that could collect data about you.</li>
+      <li>Application request logs.</li>
+      <li>Mouse movements, keystrokes or other behavioural data. The bot check is a calculation your browser performs; its interaction tracking feature is switched off.</li>
+    </ul>
+
+    <h2>3. Bot check</h2>
+    <p>When you create a secret, your browser downloads a signed challenge from our server and spends a second or two solving it in the background (ALTCHA proof-of-work). The answer is sent with your encrypted secret and checked by our server. This makes it slow and costly for automated software to create secrets in bulk. All ALTCHA code is served from our own server; no data goes to ALTCHA or any other third party.</p>
+
+    <h2>4. Data in your browser</h2>
+    <p>Your text and the key exist in your browser's memory while the page is open. The key is removed from the address bar and history as soon as a link is opened. If you copy a secret or link to your clipboard, it stays there until you replace it; the service cannot clear it for you.</p>
+
+    <h2>5. Deletion</h2>
+    <ul>
+      <li>Automatic: on first view, on expiry, or when the server restarts.</li>
+      <li>Manual: open your own link and select Reveal to destroy it before the recipient does.</li>
+      <li>Expired items are removed from memory within about one minute of expiry and are never returned after expiry.</li>
+    </ul>
+
+    <h2>6. Contact</h2>
+    <p>Questions about this policy: {{CONTACT}}.</p>
+  </main>
+</body>
+</html>

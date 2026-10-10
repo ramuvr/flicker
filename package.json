@@ -1,0 +1,19 @@
+{
+  "name": "onetime-secret",
+  "version": "1.0.0",
+  "description": "One-time, self-destructing, end-to-end encrypted links for sharing sensitive text. No logins, no database.",
+  "main": "server.js",
+  "private": true,
+  "scripts": {
+    "start": "node server.js",
+    "test": "node --test"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "license": "MIT",
+  "dependencies": {
+    "altcha": "3.2.4",
+    "altcha-lib": "2.6.0"
+  }
+}

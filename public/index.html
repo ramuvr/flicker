@@ -1,0 +1,90 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="referrer" content="no-referrer">
+  <meta name="robots" content="noindex, nofollow">
+  <title>One-Time Secret</title>
+  <link rel="stylesheet" href="/vendor/altcha.css">
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <main>
+    <header>
+      <h1>One-Time Secret</h1>
+      <p class="sub">Share sensitive text through a link that works once, then self-destructs.</p>
+    </header>
+
+    <!-- Create -->
+    <section id="view-create" hidden>
+      <label for="secret">Your secret</label>
+      <textarea id="secret" rows="10" maxlength="180000" placeholder="Paste a password, API key, note..." autocomplete="off" spellcheck="false"></textarea>
+      <div class="row">
+        <label for="ttl">Expires after</label>
+        <select id="ttl">
+          <option value="3600">1 hour</option>
+          <option value="86400" selected>1 day</option>
+          <option value="604800">7 days</option>
+        </select>
+        <span id="count" class="muted">0 characters</span>
+      </div>
+      <div id="altcha-slot" class="altcha-slot"></div>
+      <button id="create" type="button">Create one-time link</button>
+      <p id="create-error" class="error" role="alert" hidden></p>
+    </section>
+
+    <!-- Link created -->
+    <section id="view-link" hidden>
+      <h2>Your one-time link</h2>
+      <p class="muted">Anyone with this link can view the secret <strong>once</strong>. It expires <span id="expires"></span>.</p>
+      <div class="copy">
+        <input id="link" type="text" readonly aria-label="One-time link">
+        <button id="copy" type="button">Copy</button>
+      </div>
+      <p class="muted small">The decryption key is in the part of the link after <code>#</code>, which is never sent to the server. Nobody, including the server operator, can read the secret without the full link.</p>
+      <button id="another" type="button" class="secondary">Create another</button>
+    </section>
+
+    <!-- Reveal confirmation -->
+    <section id="view-reveal" hidden>
+      <h2>Someone shared a secret with you</h2>
+      <p>This secret can be viewed <strong>only once</strong>. After you reveal it, it is permanently deleted.</p>
+      <button id="reveal" type="button">Reveal secret</button>
+      <p id="reveal-error" class="error" role="alert" hidden></p>
+    </section>
+
+    <!-- Secret shown -->
+    <section id="view-secret" hidden>
+      <h2>Secret</h2>
+      <p class="warn">This secret has been deleted from the server. Copy it now; it will not be available again.</p>
+      <textarea id="plaintext" rows="10" readonly spellcheck="false"></textarea>
+      <div class="row">
+        <button id="copy-secret" type="button">Copy secret</button>
+        <a href="/" class="button secondary">Create your own</a>
+      </div>
+    </section>
+
+    <!-- Gone -->
+    <section id="view-gone" hidden>
+      <h2>Secret unavailable</h2>
+      <p id="gone-msg">This secret does not exist, has expired, or was already viewed.</p>
+      <a href="/" class="button secondary">Create a new secret</a>
+    </section>
+
+    <footer class="muted small">
+      <p>End-to-end encrypted in your browser (AES-256-GCM). No accounts, no cookies, no logs.</p>
+      <nav aria-label="Legal">
+        <a href="/privacy" target="_blank" rel="noopener noreferrer">Privacy Policy</a>
+        <span aria-hidden="true">·</span>
+        <a href="/data-collection" target="_blank" rel="noopener noreferrer">Data Collection Policy</a>
+        <span aria-hidden="true">·</span>
+        <a href="/terms" target="_blank" rel="noopener noreferrer">Terms of Use</a>
+        <span class="sr-only">(each opens in a new window)</span>
+      </nav>
+    </footer>
+  </main>
+  <script type="module" src="/vendor/altcha.js"></script>
+  <script type="module" src="/app.js"></script>
+</body>
+</html>

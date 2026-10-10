@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="referrer" content="no-referrer">
+  <meta name="robots" content="noindex, nofollow">
+  <title>Privacy Policy - One-Time Secret</title>
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <main class="legal">
+    <h1>Privacy Policy</h1>
+    <p class="muted">Effective date: {{EFFECTIVE_DATE}}</p>
+
+    <h2>1. Who we are</h2>
+    <p>This service ("One-Time Secret", "the service") is operated by {{OPERATOR_NAME}} ("we", "us"). Contact: {{CONTACT}}.</p>
+
+    <h2>2. Summary</h2>
+    <ul>
+      <li>We cannot read what you share. Your text is encrypted in your browser before it is sent, and the key never reaches our server.</li>
+      <li>There are no accounts, logins, cookies, analytics, advertising or third-party scripts.</li>
+      <li>The encrypted text is kept in server memory only, never written to disk, and is deleted the first time the link is opened or when it expires, whichever comes first.</li>
+      <li>Your IP address is used briefly, in memory, to stop abuse, and is discarded within about two minutes.</li>
+      <li>A bot check runs in your browser when you create a secret. It is a short calculation, not a puzzle, and it collects no personal data.</li>
+    </ul>
+
+    <h2>3. How the service works</h2>
+    <p>When you create a secret, your browser generates a random 256-bit key and encrypts your text with AES-256-GCM. Only the encrypted result is uploaded. The key is placed in the part of the link after the <code>#</code> symbol, which browsers do not send to web servers. When the recipient opens the link and selects <strong>Reveal</strong>, the server hands over the encrypted text and deletes it in the same step, and the recipient's browser decrypts it.</p>
+
+    <h2>4. Information we process</h2>
+    <p>Full details, including how long each item is kept, are in the <a href="/data-collection" target="_blank" rel="noopener noreferrer">Data Collection Policy</a>. In short:</p>
+    <ul>
+      <li><strong>Encrypted secret, random link ID and expiry time:</strong> needed to provide the service. We cannot decrypt the secret.</li>
+      <li><strong>IP address (IPv6: network prefix) and a request count:</strong> used only for rate limiting to protect the service from abuse.</li>
+      <li><strong>Bot check result:</strong> when you create a secret, your browser solves a small proof-of-work challenge (using the open-source ALTCHA software, run on our own server). We keep only the random ID of the solved challenge, for up to 10 minutes, so it cannot be reused. The check does not track mouse movements or keystrokes, set cookies or contact any third party.</li>
+    </ul>
+    <p>We do not collect names, email addresses, phone numbers, device fingerprints, location or browsing history, and we do not use cookies or browser storage.</p>
+
+    <h2>5. Why we process it (legal basis)</h2>
+    <p>Where data protection law such as the UK or EU GDPR applies: storing the encrypted secret is necessary to provide the service you asked for; processing IP addresses for rate limiting and running the bot check are based on our legitimate interest in keeping the service secure and available.</p>
+
+    <h2>6. Hosting provider</h2>
+    <p>The service is hosted on {{HOSTING}}. Like any website, the hosting provider's network handles connection information (such as IP addresses) to deliver traffic and protect its infrastructure, under its own privacy terms. We do not enable request logging in the application. If platform-level access logs are enabled for operational or security reasons, they may record IP address, time, requested path (which includes the link ID but never the decryption key) and browser user agent, and are kept for no longer than {{LOG_RETENTION}}.</p>
+
+    <h2>7. Sharing and sale of data</h2>
+    <p>We do not sell, rent or share personal data, and we do not use it for advertising or profiling. We may disclose information only if required by law. Because we cannot decrypt secrets, we are unable to provide their contents to anyone, including authorities.</p>
+
+    <h2>8. Your rights</h2>
+    <p>Depending on where you live, you may have rights to access, correct, delete or object to the processing of your personal data, and to complain to your data protection authority. Because we keep no accounts and discard IP addresses within minutes, we normally hold nothing that can be linked to you. To delete a secret you created before it is viewed, open the link yourself and select Reveal. For any request, contact {{CONTACT}}.</p>
+
+    <h2>9. Security</h2>
+    <p>Measures include end-to-end encryption in the browser, HTTPS only, strict browser security headers, no third-party code, deletion on first read, automatic expiry, rate limiting and a proof-of-work bot check on secret creation. No system is perfectly secure; anyone who obtains the full link before the intended recipient can view the secret.</p>
+
+    <h2>10. Children</h2>
+    <p>The service is not directed at children under 13, or a higher age where local law requires.</p>
+
+    <h2>11. Changes</h2>
+    <p>We may update this policy. The effective date at the top shows when it last changed.</p>
+  </main>
+</body>
+</html>
