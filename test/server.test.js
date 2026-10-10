@@ -476,3 +476,51 @@ test('a malformed Host header is rejected instead of being echoed into a redirec
   });
   assert.strictEqual(status, 400);
 });
+
+// ---------- Size limit: browser cap vs server cap ----------
+
+const fs = require('node:fs');
+const path = require('node:path');
+const appJs = fs.readFileSync(path.join(__dirname, '..', 'public', 'app.js'), 'utf8');
+const MAX_PLAINTEXT_BYTES = Function(`return ${appJs.match(/const MAX_PLAINTEXT_BYTES = ([^;]+);/)[1]}`)();
+const MAX_CIPHERTEXT_CHARS = 256 * 1024;
+
+async function encryptedLength(bytes) {
+  // Same scheme as the browser: 12-byte IV + AES-256-GCM (16-byte tag), base64url without padding.
+  const { subtle } = crypto.webcrypto;
+  const key = await subtle.importKey('raw', crypto.randomBytes(32), 'AES-GCM', false, ['encrypt']);
+  const ct = await subtle.encrypt({ name: 'AES-GCM', iv: crypto.randomBytes(12) }, key, new Uint8Array(bytes));
+  return Buffer.concat([crypto.randomBytes(12), Buffer.from(ct)]).toString('base64url').length;
+}
+
+test('browser size cap maps exactly onto the server cap after AES-GCM and base64url overhead', async () => {
+  assert.strictEqual(MAX_PLAINTEXT_BYTES, 196580);
+  assert.strictEqual(await encryptedLength(MAX_PLAINTEXT_BYTES), MAX_CIPHERTEXT_CHARS, 'largest allowed text fills the cap exactly');
+  assert.ok(await encryptedLength(MAX_PLAINTEXT_BYTES + 1) > MAX_CIPHERTEXT_CHARS, 'one more byte would exceed it');
+});
+
+test('server accepts ciphertext at exactly the cap (with a real bot-check payload) and rejects one character more', async () => {
+  const atCap = await create({ data: 'A'.repeat(MAX_CIPHERTEXT_CHARS), ttl: 604800 });
+  assert.strictEqual(atCap.status, 201);
+  const { id } = await atCap.json();
+  assert.strictEqual((await create({ data: 'A'.repeat(MAX_CIPHERTEXT_CHARS + 1), ttl: 604800 })).status, 400);
+  await read(id); // free memory for other tests
+});
+
+test('the text box has no character limit that would silently cut off pasted text', () => {
+  const html = fs.readFileSync(path.join(__dirname, '..', 'public', 'index.html'), 'utf8');
+  assert.ok(!/<textarea[^>]*maxlength/i.test(html));
+});
+
+test('challenge endpoint tells the browser how long a challenge lives', async () => {
+  const res = await fetch(base + '/api/challenge', { headers: { 'X-Forwarded-For': newIp() } });
+  assert.strictEqual(res.headers.get('x-challenge-ttl'), '600');
+});
+
+test('policy pages state the configured bot-check lifetime, not a hard-coded one', async () => {
+  for (const route of ['/privacy', '/data-collection']) {
+    const html = await (await fetch(base + route)).text();
+    assert.ok(html.includes('up to 10 minutes') || html.includes('Up to 10 minutes'), route);
+    assert.ok(!html.includes('{{'), route);
+  }
+});

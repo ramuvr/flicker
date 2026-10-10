@@ -57,25 +57,77 @@
   }
 
   // ---------- Bot check (ALTCHA proof-of-work, solved in the background) ----------
+  // Challenge lifetimes are tracked on this page's own monotonic clock (performance.now),
+  // never by comparing the server's timestamps with the device clock, so a device clock
+  // that is minutes fast or slow cannot make a solved check look valid when it is not.
+  const CHALLENGE_PATH = '/api/challenge';
+  const FRESH_FRACTION = 0.8; // renew once 80% of the lifetime has passed (2 of 10 minutes spare)
   let widget = null;
   let botToken = null;
+  let botTokenAt = 0;
+  let challengeTtlMs = 10 * 60 * 1000; // replaced by the server's X-Challenge-TTL
+  const serverExpiry = new Map(); // challenge nonce -> expiresAt exactly as the server signed it
+
+  // The widget schedules expiry as (server expiresAt - device clock). Re-express expiresAt in
+  // device time before the widget sees it; the signed original is restored before submitting.
+  async function challengeFetch(input, init) {
+    const res = await fetch(input, init);
+    const url = new URL(typeof input === 'string' ? input : input.url, location.href);
+    if (!res.ok || url.pathname !== CHALLENGE_PATH) return res;
+    const ttl = Number(res.headers.get('X-Challenge-TTL'));
+    if (ttl > 0) challengeTtlMs = ttl * 1000;
+    const challenge = await res.json();
+    const params = challenge && challenge.parameters;
+    if (params && params.expiresAt && typeof params.nonce === 'string') {
+      serverExpiry.set(params.nonce, params.expiresAt);
+      params.expiresAt = Math.floor((Date.now() + challengeTtlMs) / 1000);
+    }
+    return new Response(JSON.stringify(challenge), { status: res.status, headers: { 'Content-Type': 'application/json' } });
+  }
+
+  function withServerExpiry(token) {
+    try {
+      const payload = JSON.parse(atob(token));
+      const params = payload.challenge && payload.challenge.parameters;
+      if (params && serverExpiry.has(params.nonce)) {
+        params.expiresAt = serverExpiry.get(params.nonce);
+        serverExpiry.delete(params.nonce);
+        return btoa(JSON.stringify(payload));
+      }
+    } catch { /* not a payload we can read; send it unchanged */ }
+    return token;
+  }
 
   function initBotCheck() {
     if (!window.$altcha || !customElements.get('altcha-widget')) return;
     window.$altcha.algorithms.set('PBKDF2/SHA-256', () => new Worker('/vendor/altcha-pbkdf2.js'));
+    window.$altcha.defaults.set({ fetch: challengeFetch });
     widget = document.createElement('altcha-widget');
-    widget.setAttribute('challenge', '/api/challenge');
+    widget.setAttribute('challenge', CHALLENGE_PATH);
     widget.setAttribute('auto', 'onload');
     // No interaction tracking; no external attribution link.
     widget.setAttribute('configuration', JSON.stringify({ humanInteractionSignature: false, hideFooter: true }));
     widget.addEventListener('statechange', (ev) => {
-      botToken = ev.detail.state === 'verified' ? ev.detail.payload : null;
+      if (ev.detail.state === 'verified') {
+        botToken = ev.detail.payload;
+        botTokenAt = performance.now();
+      } else {
+        botToken = null;
+      }
     });
     $('altcha-slot').append(widget);
   }
 
-  function waitForBotCheck(timeoutMs = 60000) {
-    if (botToken) return Promise.resolve(botToken);
+  const tokenIsFresh = () => botToken && performance.now() - botTokenAt < challengeTtlMs * FRESH_FRACTION;
+
+  // Resolves with a payload the server will accept, solving a new challenge first when the
+  // current one is missing, used or close to expiry.
+  function getBotToken(timeoutMs = 60000) {
+    if (tokenIsFresh()) {
+      const token = botToken;
+      botToken = null; // single use
+      return Promise.resolve(withServerExpiry(token));
+    }
     if (!widget) return Promise.reject(new Error('The bot check could not load. Please reload the page.'));
     return new Promise((resolve, reject) => {
       const done = (fn, value) => {
@@ -85,18 +137,27 @@
       };
       const timer = setTimeout(() => done(reject, new Error('The bot check timed out. Please try again.')), timeoutMs);
       function onState(ev) {
-        if (ev.detail.state === 'verified') done(resolve, ev.detail.payload);
-        else if (ev.detail.state === 'error') done(reject, new Error('The bot check failed. Please reload the page and try again.'));
+        if (ev.detail.state === 'verified') {
+          botToken = null;
+          done(resolve, withServerExpiry(ev.detail.payload));
+        } else if (ev.detail.state === 'error') {
+          done(reject, new Error('The bot check failed. Please reload the page and try again.'));
+        } else if (ev.detail.state === 'expired') {
+          widget.verify();
+        }
       }
       widget.addEventListener('statechange', onState);
-      if (widget.getState() !== 'verifying') widget.verify();
+      botToken = null;
+      if (widget.getState() !== 'verifying') {
+        widget.reset();
+        widget.verify();
+      }
     });
   }
 
-  // Each solved challenge is accepted once, so start a fresh one after every attempt.
-  function renewBotCheck() {
-    botToken = null;
-    if (!widget) return;
+  // Start the next check in the background so it is ready for the next secret.
+  function prepareNextBotCheck() {
+    if (!widget || tokenIsFresh() || widget.getState() === 'verifying') return;
     widget.reset();
     widget.verify();
   }
@@ -122,19 +183,24 @@
       const btn = $('create');
       const label = btn.textContent;
       btn.disabled = true;
-      let attempted = false;
       try {
-        if (!botToken) btn.textContent = 'Checking you are not a bot...';
-        const altcha = await waitForBotCheck();
-        btn.textContent = label;
         const { data, key } = await encrypt(text);
-        attempted = true;
-        const res = await fetch('/api/secrets', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ data, ttl: Number($('ttl').value), altcha }),
-        });
-        const body = await res.json().catch(() => ({}));
+        const ttl = Number($('ttl').value);
+        let res, body;
+        // A check rejected by the server (for example, expired in transit) is renewed and the
+        // request retried once, automatically, so the person never has to click again.
+        for (let attempt = 1; attempt <= 2; attempt++) {
+          if (!tokenIsFresh()) btn.textContent = 'Checking you are not a bot...';
+          const altcha = await getBotToken();
+          btn.textContent = label;
+          res = await fetch('/api/secrets', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ data, ttl, altcha }),
+          });
+          body = await res.json().catch(() => ({}));
+          if (!(res.status === 403 && /^Bot check/.test(body.error || ''))) break;
+        }
         if (!res.ok) throw new Error(body.error || 'Could not create link.');
 
         ta.value = '';
@@ -148,7 +214,7 @@
       } finally {
         btn.textContent = label;
         btn.disabled = false;
-        if (attempted) renewBotCheck();
+        prepareNextBotCheck();
       }
     });
 

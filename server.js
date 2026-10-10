@@ -39,7 +39,9 @@ const ALTCHA_ALGORITHM = 'PBKDF2/SHA-256';
 const ALTCHA_COST = Number(process.env.ALTCHA_COST) || 1000;
 const ALTCHA_COUNTER_MIN = Number(process.env.ALTCHA_COUNTER_MIN) || 1000;
 const ALTCHA_COUNTER_MAX = Number(process.env.ALTCHA_COUNTER_MAX) || 3000;
-const ALTCHA_TTL_MS = 10 * 60_000;
+// How long a challenge stays valid (seconds, 30 to 3600). Sent to the browser in X-Challenge-TTL.
+const ALTCHA_TTL_SECONDS = Math.min(3600, Math.max(30, Number(process.env.ALTCHA_TTL_SECONDS) || 600));
+const ALTCHA_TTL_MS = ALTCHA_TTL_SECONDS * 1000;
 const MAX_USED_CHALLENGES = 100000;
 // nonce -> expiry (ms). A solved challenge can be used once only.
 const usedChallenges = new Map();
@@ -177,6 +179,13 @@ function setting(name, placeholder) {
 function optionalSetting(name, fallback) {
   return escapeHtml(process.env[name] || fallback);
 }
+// "600" -> "10 minutes", "3600" -> "1 hour", "90" -> "90 seconds" (for policy text).
+function humanDuration(seconds) {
+  const plural = (n, unit) => `${n} ${unit}${n === 1 ? '' : 's'}`;
+  if (seconds % 3600 === 0) return plural(seconds / 3600, 'hour');
+  if (seconds % 60 === 0) return plural(seconds / 60, 'minute');
+  return plural(seconds, 'second');
+}
 const LEGAL_TOKENS = {
   OPERATOR_NAME: setting('OPERATOR_NAME', '[operator name not configured]'),
   CONTACT: contactHtml(process.env.CONTACT_EMAIL),
@@ -184,6 +193,7 @@ const LEGAL_TOKENS = {
   HOSTING: optionalSetting('HOSTING_PROVIDER', 'Microsoft Azure'),
   LOG_RETENTION: optionalSetting('LOG_RETENTION', '30 days'),
   EFFECTIVE_DATE: setting('POLICY_EFFECTIVE_DATE', '[effective date not configured]'),
+  CHALLENGE_LIFETIME: escapeHtml(humanDuration(ALTCHA_TTL_SECONDS)),
 };
 const LEGAL = { '/privacy': 'privacy.html', '/data-collection': 'data-collection.html', '/terms': 'terms.html' };
 for (const [route, file] of Object.entries(LEGAL)) {
@@ -308,7 +318,7 @@ async function handle(req, res) {
 
   if (route === '/api/challenge' && req.method === 'GET') {
     if (rateLimited(clientKey(req))) return send(res, 429, { error: 'Too many requests' });
-    return send(res, 200, await createChallenge());
+    return send(res, 200, await createChallenge(), undefined, { 'X-Challenge-TTL': String(ALTCHA_TTL_SECONDS) });
   }
 
   if (route === '/api/secrets' && req.method === 'POST') {

@@ -25,7 +25,7 @@
           <tr><td>Random link ID (128-bit)</td><td>Find the encrypted secret</td><td>Server memory only</td><td>Same as the secret</td></tr>
           <tr><td>Expiry time</td><td>Delete the secret on time</td><td>Server memory only</td><td>Same as the secret</td></tr>
           <tr><td>IP address (IPv6: first 64 bits) and request count</td><td>Rate limiting to prevent abuse</td><td>Server memory only</td><td>About 1 to 2 minutes</td></tr>
-          <tr><td>Bot check: random challenge ID (no personal data)</td><td>Stop a solved check being reused to create more secrets</td><td>Server memory only</td><td>Up to 10 minutes</td></tr>
+          <tr><td>Bot check: random challenge ID (no personal data)</td><td>Stop a solved check being reused to create more secrets</td><td>Server memory only</td><td>Up to {{CHALLENGE_LIFETIME}}</td></tr>
           <tr><td>Connection data handled by the hosting provider</td><td>Delivering traffic, network security</td><td>{{HOSTING}}</td><td>Per the provider's terms; any platform access logs we enable: up to {{LOG_RETENTION}}</td></tr>
         </tbody>
       </table>

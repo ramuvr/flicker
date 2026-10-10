@@ -25,12 +25,12 @@ Other protections:
 - Strict Content-Security-Policy (no inline scripts), `no-referrer`, `no-store`, `noindex`, HSTS, frame denial, COOP/CORP, Permissions-Policy.
 - Abuse limits: ~190 KB per secret, 100 MB total in memory, 10,000 items, 30 requests/min per client (IPv6 grouped per /64), 10s header / 30s request timeouts.
 - Rate limiting reads only the proxy-appended end of `X-Forwarded-For`, so clients cannot spoof their address.
-- Bot protection on secret creation: ALTCHA proof-of-work (self-hosted, no third party, no cookies, interaction tracking off). Each solved challenge works once and expires after 10 minutes.
+- Bot protection on secret creation: ALTCHA proof-of-work (self-hosted, no third party, no cookies, interaction tracking off). Each solved challenge works once and expires after 10 minutes by default (`ALTCHA_TTL_SECONDS`); the policy pages show the configured value.
 - Supply chain: only `altcha` and `altcha-lib` (exact versions, lockfile, `npm audit` in CI); GitHub Actions pinned to commit SHAs and the Docker base image pinned to a digest; Dependabot proposes updates.
 
 ## Security testing
 
-`npm test` runs 32 tests covering: one-time read (including 20 simultaneous reads), expiry, ID guessing, input validation, reflected XSS, prototype pollution, CSRF, path traversal, HTTP methods, security headers, oversized bodies, rate limiting and spoofing, IPv6 rotation, memory caps, and the policy pages (security headers, no scripts or third-party content, HTML-escaping of operator settings, safe new-window links), and the bot check (missing, wrong, tampered, foreign-signed, expired, cheaper-algorithm and replayed solutions; rate-limited challenge endpoint), and HTTPS enforcement (redirects, refused HTTP writes, forged scheme, malformed Host).
+`npm test` runs 37 tests covering: one-time read (including 20 simultaneous reads), expiry, ID guessing, input validation, reflected XSS, prototype pollution, CSRF, path traversal, HTTP methods, security headers, oversized bodies, rate limiting and spoofing, IPv6 rotation, memory caps, and the policy pages (security headers, no scripts or third-party content, HTML-escaping of operator settings, safe new-window links), and the bot check (missing, wrong, tampered, foreign-signed, expired, cheaper-algorithm and replayed solutions; rate-limited challenge endpoint), HTTPS enforcement (redirects, refused HTTP writes, forged scheme, malformed Host), and the size limit (largest allowed text encrypts to exactly the 256 KB server cap; one byte more is refused).
 
 ## Run locally
 
@@ -125,6 +125,7 @@ If you later put Cloudflare (or another proxy) in front, set `TRUST_PROXY_HOPS=2
 | `ALTCHA_COST` | 1000 | Bot-check difficulty (PBKDF2 iterations per attempt) |
 | `ALTCHA_COUNTER_MIN` / `ALTCHA_COUNTER_MAX` | 1000 / 3000 | Range of attempts needed; together with cost this gives about 1-2 s of work in a typical browser |
 | `HTTPS_REDIRECT` | on | Set to `0` to stop the app redirecting plain HTTP (only if another layer guarantees HTTPS) |
+| `ALTCHA_TTL_SECONDS` | 600 | How long a bot-check challenge stays valid (30 to 3600). The browser renews after 80% of it, timed on its own clock, so device clock drift does not matter |
 | `TRUST_PROXY_HOPS` | 1 | Reverse proxies in front of the app (Azure App Service, Render, etc.: 1). Set to `0` if the app is exposed directly with no proxy, otherwise clients can spoof their IP. |
 
 ## Reporting security issues
