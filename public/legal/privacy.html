@@ -33,7 +33,7 @@
     <ul>
       <li><strong>Encrypted secret, random link ID and expiry time:</strong> needed to provide the service. We cannot decrypt the secret.</li>
       <li><strong>IP address (IPv6: network prefix) and a request count:</strong> used only for rate limiting to protect the service from abuse.</li>
-      <li><strong>Bot check result:</strong> when you create a secret, your browser solves a small proof-of-work challenge (using the open-source ALTCHA software, run on our own server). We keep only the random ID of the solved challenge, for up to 10 minutes, so it cannot be reused. The check does not track mouse movements or keystrokes, set cookies or contact any third party.</li>
+      <li><strong>Bot check result:</strong> when you create a secret, your browser solves a small proof-of-work challenge (using the open-source ALTCHA software, run on our own server). We keep only the random ID of the solved challenge, for up to {{CHALLENGE_LIFETIME}}, so it cannot be reused. The check does not track mouse movements or keystrokes, set cookies or contact any third party.</li>
     </ul>
     <p>We do not collect names, email addresses, phone numbers, device fingerprints, location or browsing history, and we do not use cookies or browser storage.</p>
 

@@ -516,3 +516,11 @@ test('challenge endpoint tells the browser how long a challenge lives', async ()
   const res = await fetch(base + '/api/challenge', { headers: { 'X-Forwarded-For': newIp() } });
   assert.strictEqual(res.headers.get('x-challenge-ttl'), '600');
 });
+
+test('policy pages state the configured bot-check lifetime, not a hard-coded one', async () => {
+  for (const route of ['/privacy', '/data-collection']) {
+    const html = await (await fetch(base + route)).text();
+    assert.ok(html.includes('up to 10 minutes') || html.includes('Up to 10 minutes'), route);
+    assert.ok(!html.includes('{{'), route);
+  }
+});

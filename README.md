@@ -25,12 +25,12 @@ Other protections:
 - Strict Content-Security-Policy (no inline scripts), `no-referrer`, `no-store`, `noindex`, HSTS, frame denial, COOP/CORP, Permissions-Policy.
 - Abuse limits: ~190 KB per secret, 100 MB total in memory, 10,000 items, 30 requests/min per client (IPv6 grouped per /64), 10s header / 30s request timeouts.
 - Rate limiting reads only the proxy-appended end of `X-Forwarded-For`, so clients cannot spoof their address.
-- Bot protection on secret creation: ALTCHA proof-of-work (self-hosted, no third party, no cookies, interaction tracking off). Each solved challenge works once and expires after 10 minutes.
+- Bot protection on secret creation: ALTCHA proof-of-work (self-hosted, no third party, no cookies, interaction tracking off). Each solved challenge works once and expires after 10 minutes by default (`ALTCHA_TTL_SECONDS`); the policy pages show the configured value.
 - Supply chain: only `altcha` and `altcha-lib` (exact versions, lockfile, `npm audit` in CI); GitHub Actions pinned to commit SHAs and the Docker base image pinned to a digest; Dependabot proposes updates.
 
 ## Security testing
 
-`npm test` runs 36 tests covering: one-time read (including 20 simultaneous reads), expiry, ID guessing, input validation, reflected XSS, prototype pollution, CSRF, path traversal, HTTP methods, security headers, oversized bodies, rate limiting and spoofing, IPv6 rotation, memory caps, and the policy pages (security headers, no scripts or third-party content, HTML-escaping of operator settings, safe new-window links), and the bot check (missing, wrong, tampered, foreign-signed, expired, cheaper-algorithm and replayed solutions; rate-limited challenge endpoint), HTTPS enforcement (redirects, refused HTTP writes, forged scheme, malformed Host), and the size limit (largest allowed text encrypts to exactly the 256 KB server cap; one byte more is refused).
+`npm test` runs 37 tests covering: one-time read (including 20 simultaneous reads), expiry, ID guessing, input validation, reflected XSS, prototype pollution, CSRF, path traversal, HTTP methods, security headers, oversized bodies, rate limiting and spoofing, IPv6 rotation, memory caps, and the policy pages (security headers, no scripts or third-party content, HTML-escaping of operator settings, safe new-window links), and the bot check (missing, wrong, tampered, foreign-signed, expired, cheaper-algorithm and replayed solutions; rate-limited challenge endpoint), HTTPS enforcement (redirects, refused HTTP writes, forged scheme, malformed Host), and the size limit (largest allowed text encrypts to exactly the 256 KB server cap; one byte more is refused).
 
 ## Run locally
 
