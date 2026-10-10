@@ -12,35 +12,75 @@ const crypto = require('crypto');
 const altcha = require('altcha-lib');
 const { deriveKey } = require('altcha-lib/algorithms/pbkdf2');
 
-const PORT = Number(process.env.PORT) || 8080;
+// ---------- Configuration (environment variables) ----------
+// Every setting is checked at startup. An invalid value stops the server with a clear
+// message instead of starting with silently wrong limits (for example a negative rate
+// limit, or a bot check that fails on every request while health checks look fine).
+const configErrors = [];
+function intSetting(name, fallback, min, max) {
+  const raw = process.env[name];
+  if (raw === undefined || raw.trim() === '') return fallback;
+  const value = Number(raw);
+  if (!Number.isInteger(value) || value < min || value > max) {
+    configErrors.push(`${name}=${JSON.stringify(raw)} must be a whole number from ${min} to ${max}`);
+    return fallback;
+  }
+  return value;
+}
+function boolSetting(name, fallback) {
+  const raw = process.env[name];
+  if (raw === undefined || raw.trim() === '') return fallback;
+  const v = raw.trim().toLowerCase();
+  if (['1', 'true', 'on', 'yes'].includes(v)) return true;
+  if (['0', 'false', 'off', 'no'].includes(v)) return false;
+  configErrors.push(`${name}=${JSON.stringify(raw)} must be 1 or 0 (true or false)`);
+  return fallback;
+}
+
+const PORT = intSetting('PORT', 8080, 0, 65535);
 const MAX_CIPHERTEXT_BYTES = 256 * 1024; // ~190 KB of plaintext
 const MIN_CIPHERTEXT_CHARS = 38; // 12-byte IV + 16-byte GCM tag, base64url
 const MAX_BODY_BYTES = MAX_CIPHERTEXT_BYTES + 8 * 1024; // room for the ALTCHA payload
-const MAX_ITEMS = Number(process.env.MAX_ITEMS) || 10000;
+const MAX_ITEMS = intSetting('MAX_ITEMS', 10000, 1, 1000000);
 // Cap on total ciphertext held in memory, so a flood of large secrets cannot exhaust RAM.
-const MAX_TOTAL_BYTES = (Number(process.env.MAX_TOTAL_MB) || 100) * 1024 * 1024;
+const MAX_TOTAL_BYTES = intSetting('MAX_TOTAL_MB', 100, 1, 16384) * 1024 * 1024;
 const ALLOWED_TTLS = [3600, 86400, 604800]; // 1 hour, 1 day, 7 days
-const RATE_LIMIT_PER_MIN = Number(process.env.RATE_LIMIT_PER_MIN) || 30;
+const RATE_LIMIT_PER_MIN = intSetting('RATE_LIMIT_PER_MIN', 30, 1, 100000);
 const MAX_TRACKED_CLIENTS = 100000;
 // Number of reverse proxies in front of the app that append to X-Forwarded-For.
 // Azure App Service / most PaaS: 1. Exposed directly to the internet: 0.
-const TRUST_PROXY_HOPS = process.env.TRUST_PROXY_HOPS === undefined ? 1 : Number(process.env.TRUST_PROXY_HOPS);
+const TRUST_PROXY_HOPS = intSetting('TRUST_PROXY_HOPS', 1, 0, 5);
 // Redirect plain-HTTP requests to HTTPS, as reported by the proxy's X-Forwarded-Proto
 // header (Azure App Service terminates TLS and sets it). Set HTTPS_REDIRECT=0 to disable.
-const HTTPS_REDIRECT = process.env.HTTPS_REDIRECT !== '0';
+const HTTPS_REDIRECT = boolSetting('HTTPS_REDIRECT', true);
 
 // ALTCHA proof-of-work bot check on secret creation. The browser must spend
 // CPU time solving a signed challenge, which makes bulk creation by bots slow and costly.
 // Without ALTCHA_HMAC_SECRET a random key is used, so outstanding challenges end on restart
 // (secrets are lost on restart anyway).
+if (process.env.ALTCHA_HMAC_SECRET && process.env.ALTCHA_HMAC_SECRET.length < 32) {
+  configErrors.push('ALTCHA_HMAC_SECRET must be at least 32 characters (or unset to use a random key)');
+}
 const ALTCHA_HMAC_SECRET = process.env.ALTCHA_HMAC_SECRET || crypto.randomBytes(32).toString('hex');
 const ALTCHA_KEY_SECRET = crypto.createHmac('sha256', ALTCHA_HMAC_SECRET).update('altcha-key-signature').digest('hex');
 const ALTCHA_ALGORITHM = 'PBKDF2/SHA-256';
-const ALTCHA_COST = Number(process.env.ALTCHA_COST) || 1000;
-const ALTCHA_COUNTER_MIN = Number(process.env.ALTCHA_COUNTER_MIN) || 1000;
-const ALTCHA_COUNTER_MAX = Number(process.env.ALTCHA_COUNTER_MAX) || 3000;
-// How long a challenge stays valid (seconds, 30 to 3600). Sent to the browser in X-Challenge-TTL.
-const ALTCHA_TTL_SECONDS = Math.min(3600, Math.max(30, Number(process.env.ALTCHA_TTL_SECONDS) || 600));
+const ALTCHA_COST = intSetting('ALTCHA_COST', 1000, 1, 1000000);
+const ALTCHA_COUNTER_MIN = intSetting('ALTCHA_COUNTER_MIN', 1000, 1, 100000000);
+const ALTCHA_COUNTER_MAX = intSetting('ALTCHA_COUNTER_MAX', 3000, 1, 100000000);
+if (ALTCHA_COUNTER_MIN > ALTCHA_COUNTER_MAX) {
+  configErrors.push(`ALTCHA_COUNTER_MIN (${ALTCHA_COUNTER_MIN}) must not be greater than ALTCHA_COUNTER_MAX (${ALTCHA_COUNTER_MAX})`);
+}
+// How long a challenge stays valid (seconds). Sent to the browser in X-Challenge-TTL.
+const ALTCHA_TTL_SECONDS = intSetting('ALTCHA_TTL_SECONDS', 600, 30, 3600);
+
+if (configErrors.length) {
+  const message = `Invalid configuration:\n  - ${configErrors.join('\n  - ')}`;
+  if (require.main === module) {
+    console.error(message);
+    process.exit(1);
+  }
+  throw new Error(message);
+}
 const ALTCHA_TTL_MS = ALTCHA_TTL_SECONDS * 1000;
 const MAX_USED_CHALLENGES = 100000;
 // nonce -> expiry (ms). A solved challenge can be used once only.
@@ -284,6 +324,22 @@ function forwardedProto(req) {
 
 const HOST_RE = /^[A-Za-z0-9.-]+(:\d{1,5})?$/;
 
+// Health = the app can do its job: issue a bot-check challenge (the step that fails first
+// on a bad setting or broken dependency). Cached for 10 s so the endpoint cannot burn CPU.
+let lastHealth = { at: 0, ok: false };
+async function healthy() {
+  if (Date.now() - lastHealth.at < 10_000) return lastHealth.ok;
+  let ok = false;
+  try {
+    const c = await createChallenge();
+    ok = Boolean(c && c.signature && c.parameters && c.parameters.nonce);
+  } catch {
+    ok = false;
+  }
+  lastHealth = { at: Date.now(), ok };
+  return ok;
+}
+
 // Returns true if the request was answered with a redirect or refusal.
 function enforceHttps(req, res, route) {
   if (!HTTPS_REDIRECT || route === '/healthz' || forwardedProto(req) !== 'http') return false;
@@ -308,7 +364,10 @@ async function handle(req, res) {
 
   if (enforceHttps(req, res, route)) return;
 
-  if (req.method === 'GET' && route === '/healthz') return send(res, 200, { ok: true });
+  if (req.method === 'GET' && route === '/healthz') {
+    const ok = await healthy();
+    return send(res, ok ? 200 : 503, { ok });
+  }
 
   // Static files. /s/<id> serves the same page; the client decides what to show.
   if (req.method === 'GET' && (STATIC[route] || /^\/s\/[A-Za-z0-9_-]{22}$/.test(route))) {

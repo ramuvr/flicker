@@ -5,7 +5,7 @@
 process.env.RATE_LIMIT_PER_MIN = '20';
 process.env.MAX_TOTAL_MB = '1';
 // Cheap proof-of-work so tests run fast; a known HMAC secret lets tests forge edge cases.
-process.env.ALTCHA_HMAC_SECRET = 'test-hmac-secret';
+process.env.ALTCHA_HMAC_SECRET = 'test-hmac-secret-for-unit-tests-only-0001';
 process.env.ALTCHA_COST = '10';
 process.env.ALTCHA_COUNTER_MIN = '1';
 process.env.ALTCHA_COUNTER_MAX = '20';
@@ -337,8 +337,8 @@ test('every link that opens a new window uses rel="noopener noreferrer"', async 
 
 // ---------- Bot protection (ALTCHA proof-of-work) ----------
 
-const KEY_SECRET = crypto.createHmac('sha256', 'test-hmac-secret').update('altcha-key-signature').digest('hex');
-function forgeChallenge({ hmac = 'test-hmac-secret', expiresAt = new Date(Date.now() + 60_000), algorithm = 'PBKDF2/SHA-256' } = {}) {
+const KEY_SECRET = crypto.createHmac('sha256', 'test-hmac-secret-for-unit-tests-only-0001').update('altcha-key-signature').digest('hex');
+function forgeChallenge({ hmac = 'test-hmac-secret-for-unit-tests-only-0001', expiresAt = new Date(Date.now() + 60_000), algorithm = 'PBKDF2/SHA-256' } = {}) {
   return altchaLib.createChallenge({
     algorithm, cost: 10, counter: 5, expiresAt,
     deriveKey: algorithm === 'SHA-256' ? require('altcha-lib/algorithms/sha').deriveKey : deriveKey,
@@ -406,7 +406,7 @@ test('bot check: challenge endpoint is rate limited and reveals nothing secret',
   assert.strictEqual(res.status, 200);
   assert.strictEqual(res.headers.get('cache-control'), 'no-store');
   const text = await res.text();
-  assert.ok(!text.includes('test-hmac-secret') && !text.includes(KEY_SECRET));
+  assert.ok(!text.includes('test-hmac-secret-for-unit-tests-only-0001') && !text.includes(KEY_SECRET));
   const c = JSON.parse(text);
   assert.ok(c.signature && c.parameters.nonce && c.parameters.expiresAt);
   assert.strictEqual(c.parameters.counter, undefined, 'answer is not sent to the client');
@@ -523,4 +523,50 @@ test('policy pages state the configured bot-check lifetime, not a hard-coded one
     assert.ok(html.includes('up to 10 minutes') || html.includes('Up to 10 minutes'), route);
     assert.ok(!html.includes('{{'), route);
   }
+});
+
+// ---------- Startup configuration and health ----------
+
+const { spawnSync } = require('node:child_process');
+const runServer = (env) =>
+  spawnSync(process.execPath, ['server.js'], {
+    cwd: path.join(__dirname, '..'),
+    env: { PATH: process.env.PATH, PORT: '0', ...env },
+    encoding: 'utf8',
+    timeout: 3000,
+  });
+
+test('invalid settings stop the server at startup with a clear message', () => {
+  const cases = {
+    RATE_LIMIT_PER_MIN: '-5',
+    ALTCHA_COST: '-1',
+    TRUST_PROXY_HOPS: 'one',
+    MAX_TOTAL_MB: '0',
+    ALTCHA_TTL_SECONDS: '5',
+    HTTPS_REDIRECT: 'maybe',
+    ALTCHA_HMAC_SECRET: 'too-short',
+    PORT: '99999',
+  };
+  for (const [name, value] of Object.entries(cases)) {
+    const r = runServer({ [name]: value });
+    assert.strictEqual(r.status, 1, `${name}=${value} should exit with code 1`);
+    assert.match(r.stderr, new RegExp(`Invalid configuration:[\\s\\S]*${name}`), name);
+  }
+  const both = runServer({ ALTCHA_COUNTER_MIN: '5000', ALTCHA_COUNTER_MAX: '10' });
+  assert.strictEqual(both.status, 1);
+  assert.match(both.stderr, /ALTCHA_COUNTER_MIN \(5000\) must not be greater than ALTCHA_COUNTER_MAX \(10\)/);
+});
+
+test('valid settings start normally (process keeps running until stopped)', () => {
+  const r = runServer({ RATE_LIMIT_PER_MIN: '60', TRUST_PROXY_HOPS: '2', HTTPS_REDIRECT: 'false', ALTCHA_TTL_SECONDS: '900' });
+  assert.strictEqual(r.status, null, `exited early: ${r.stderr}`);
+  assert.strictEqual(r.signal, 'SIGTERM');
+  assert.match(r.stdout, /Listening on port/);
+});
+
+test('/healthz reports healthy only when the bot check can issue a challenge', async () => {
+  const res = await fetch(base + '/healthz');
+  assert.strictEqual(res.status, 200);
+  assert.deepStrictEqual(await res.json(), { ok: true });
+  assert.strictEqual(res.headers.get('cache-control'), 'no-store');
 });
