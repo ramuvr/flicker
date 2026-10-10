@@ -25,6 +25,9 @@ const MAX_TRACKED_CLIENTS = 100000;
 // Number of reverse proxies in front of the app that append to X-Forwarded-For.
 // Azure App Service / most PaaS: 1. Exposed directly to the internet: 0.
 const TRUST_PROXY_HOPS = process.env.TRUST_PROXY_HOPS === undefined ? 1 : Number(process.env.TRUST_PROXY_HOPS);
+// Redirect plain-HTTP requests to HTTPS, as reported by the proxy's X-Forwarded-Proto
+// header (Azure App Service terminates TLS and sets it). Set HTTPS_REDIRECT=0 to disable.
+const HTTPS_REDIRECT = process.env.HTTPS_REDIRECT !== '0';
 
 // ALTCHA proof-of-work bot check on secret creation. The browser must spend
 // CPU time solving a signed challenge, which makes bulk creation by bots slow and costly.
@@ -261,9 +264,39 @@ function isSameOriginJson(req) {
   return /^application\/json\b/i.test(req.headers['content-type'] || '');
 }
 
+// The scheme the visitor used, as reported by the trusted proxy (null when not behind one).
+// Like X-Forwarded-For, only the rightmost value(s) come from a proxy we trust.
+function forwardedProto(req) {
+  if (TRUST_PROXY_HOPS <= 0 || !req.headers['x-forwarded-proto']) return null;
+  const parts = String(req.headers['x-forwarded-proto']).split(',').map((s) => s.trim().toLowerCase()).filter(Boolean);
+  return parts[Math.max(0, parts.length - TRUST_PROXY_HOPS)] || null;
+}
+
+const HOST_RE = /^[A-Za-z0-9.-]+(:\d{1,5})?$/;
+
+// Returns true if the request was answered with a redirect or refusal.
+function enforceHttps(req, res, route) {
+  if (!HTTPS_REDIRECT || route === '/healthz' || forwardedProto(req) !== 'http') return false;
+  const host = req.headers.host || '';
+  if (!HOST_RE.test(host)) {
+    send(res, 400, { error: 'Bad request' });
+    return true;
+  }
+  if (req.method === 'GET' || req.method === 'HEAD') {
+    res.writeHead(301, { ...SECURITY_HEADERS, Location: `https://${host}${req.url}` });
+    res.end();
+  } else {
+    // Never redirect a request body: it has already crossed the network unencrypted.
+    send(res, 403, { error: 'HTTPS required' });
+  }
+  return true;
+}
+
 async function handle(req, res) {
   const url = new URL(req.url, 'http://localhost');
   const route = url.pathname;
+
+  if (enforceHttps(req, res, route)) return;
 
   if (req.method === 'GET' && route === '/healthz') return send(res, 200, { ok: true });
 
