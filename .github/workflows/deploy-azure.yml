@@ -43,9 +43,29 @@ jobs:
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: 22
-      # Install exact locked production dependencies so node_modules ships with the package.
-      - run: npm ci --omit=dev
-      - uses: azure/webapps-deploy@02a81bead70021f5284939794bcec79c271ab383 # v3.0.8
+      # Ship only what runs in production: the server, the web files and locked
+      # production dependencies (no tests, docs or workflow files).
+      - name: Build deployment package
+        run: |
+          mkdir dist
+          cp -r server.js package.json package-lock.json public dist/
+          npm ci --omit=dev --prefix dist
+      - id: deploy
+        uses: azure/webapps-deploy@02a81bead70021f5284939794bcec79c271ab383 # v3.0.8
         with:
           app-name: ${{ vars.AZURE_WEBAPP_NAME }}
-          package: .
+          package: dist
+      # Fail the run if the deployed app does not answer correctly. /healthz returns 200
+      # only when the bot check can issue a challenge (startup settings validated).
+      - name: Smoke test the deployed app
+        env:
+          APP_URL: ${{ steps.deploy.outputs.webapp-url }}
+        run: |
+          set -euo pipefail
+          check() { curl -fsS -o /dev/null --retry 12 --retry-delay 10 --retry-all-errors -w "%{http_code} $1\n" "$APP_URL$1"; }
+          check /healthz
+          check /
+          check /privacy
+          curl -fsS -D - -o /dev/null "$APP_URL/" | grep -qi "^content-security-policy: default-src 'none'"
+          curl -fsS "$APP_URL/api/challenge" | grep -q '"signature"'
+          echo "Smoke test passed for $APP_URL"

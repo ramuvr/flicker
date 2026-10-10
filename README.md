@@ -30,7 +30,7 @@ Other protections:
 
 ## Security testing
 
-`npm test` runs 37 tests covering: one-time read (including 20 simultaneous reads), expiry, ID guessing, input validation, reflected XSS, prototype pollution, CSRF, path traversal, HTTP methods, security headers, oversized bodies, rate limiting and spoofing, IPv6 rotation, memory caps, and the policy pages (security headers, no scripts or third-party content, HTML-escaping of operator settings, safe new-window links), and the bot check (missing, wrong, tampered, foreign-signed, expired, cheaper-algorithm and replayed solutions; rate-limited challenge endpoint), HTTPS enforcement (redirects, refused HTTP writes, forged scheme, malformed Host), and the size limit (largest allowed text encrypts to exactly the 256 KB server cap; one byte more is refused).
+`npm test` runs 40 tests covering: one-time read (including 20 simultaneous reads), expiry, ID guessing, input validation, reflected XSS, prototype pollution, CSRF, path traversal, HTTP methods, security headers, oversized bodies, rate limiting and spoofing, IPv6 rotation, memory caps, and the policy pages (security headers, no scripts or third-party content, HTML-escaping of operator settings, safe new-window links), and the bot check (missing, wrong, tampered, foreign-signed, expired, cheaper-algorithm and replayed solutions; rate-limited challenge endpoint), HTTPS enforcement (redirects, refused HTTP writes, forged scheme, malformed Host), the size limit (largest allowed text encrypts to exactly the 256 KB server cap; one byte more is refused), startup validation of every setting, and the health check.
 
 ## Run locally
 
@@ -43,6 +43,8 @@ npm test           # functional + security tests
 ```
 
 ## Deploy to Azure App Service (Linux)
+
+**First deployment: follow [DEPLOYMENT-CHECKLIST.md](DEPLOYMENT-CHECKLIST.md)**. It lists everything that needs your Azure account or the live site: resources, settings, GitHub connection, health check, custom domain, manual checks, a load test on your plan, and rollback.
 
 ```bash
 az login
@@ -58,6 +60,8 @@ The app listens on the `PORT` environment variable, which App Service sets autom
 ## Automatic deployment from GitHub
 
 `.github/workflows/deploy-azure.yml` runs the tests on every push and pull request, and deploys to Azure App Service when `main` changes. Authentication uses OpenID Connect (short-lived tokens; no Azure password stored in GitHub).
+
+The deploy job ships a minimal package (`server.js`, `public/`, `package*.json` and production dependencies only), then smoke-tests the live app: `/healthz`, the home page, a policy page, the Content-Security-Policy header and a signed bot-check challenge. The run fails if any check fails. Until the `AZURE_WEBAPP_NAME` variable is set, the deploy job is skipped.
 
 One-time setup:
 
@@ -103,30 +107,38 @@ For the root domain (`example.com`) use an `A` record to the app's IP instead of
 
 If you later put Cloudflare (or another proxy) in front, set `TRUST_PROXY_HOPS=2` and switch to a certificate that does not rely on the direct CNAME.
 
+## Health check and load testing
+
+- `GET /healthz` returns `200 {"ok":true}` only when the app can issue a bot-check challenge, otherwise `503`. The result is cached for 10 seconds. Use it as the App Service Health check path.
+- `node scripts/loadtest.js --url <site> [--secrets 400] [--concurrency 10] [--read]` creates full-size secrets the way a browser does (including solving the bot check) and reports status codes and latency. Usage notes are at the top of the script; the Azure procedure is in the deployment checklist.
+- Local measurement (2026-10-10): idle 55 MB; 100 MB cap full about 200 MB; peak 235 MB during 100 simultaneous full-size uploads; memory released after read-back. Repeat on your plan before relying on it.
+
 ## Policy pages
 
 `/privacy`, `/data-collection` and `/terms` are linked from the footer and open in a new window (`rel="noopener noreferrer"`). Their content matches what the code actually does. Set the operator settings below (on Azure: App Service > Settings > Environment variables). Unset required values appear as highlighted placeholders. The text is a template, not legal advice; have it reviewed for your jurisdiction before going live, and update it if you change what the service collects (for example, if you add a CAPTCHA provider).
 
 ## Configuration (environment variables)
 
-| Variable | Default | Purpose |
-|---|---|---|
-| `PORT` | 8080 | Listen port |
-| `MAX_ITEMS` | 10000 | Max secrets held at once |
-| `RATE_LIMIT_PER_MIN` | 30 | Create/check/read requests per client per minute |
-| `MAX_TOTAL_MB` | 100 | Max total ciphertext held in memory |
-| `OPERATOR_NAME` | (placeholder shown) | Your organisation name, shown on the policy pages |
-| `CONTACT_EMAIL` | (placeholder shown) | Privacy / legal contact shown on the policy pages |
-| `JURISDICTION` | (placeholder shown) | Governing law in the Terms of Use, e.g. `England and Wales` |
-| `POLICY_EFFECTIVE_DATE` | (placeholder shown) | Date shown at the top of each policy, e.g. `10 October 2026` |
-| `HOSTING_PROVIDER` | Microsoft Azure | Hosting provider named in the policies (add region if relevant, e.g. `Microsoft Azure (UK South)`) |
-| `LOG_RETENTION` | 30 days | Retention you commit to if you enable platform access logs |
-| `ALTCHA_HMAC_SECRET` | random per start | Secret that signs bot-check challenges. Optional on a single instance; set a long random value (App Service setting) if you want challenges to survive restarts. Never commit it. |
-| `ALTCHA_COST` | 1000 | Bot-check difficulty (PBKDF2 iterations per attempt) |
-| `ALTCHA_COUNTER_MIN` / `ALTCHA_COUNTER_MAX` | 1000 / 3000 | Range of attempts needed; together with cost this gives about 1-2 s of work in a typical browser |
-| `HTTPS_REDIRECT` | on | Set to `0` to stop the app redirecting plain HTTP (only if another layer guarantees HTTPS) |
-| `ALTCHA_TTL_SECONDS` | 600 | How long a bot-check challenge stays valid (30 to 3600). The browser renews after 80% of it, timed on its own clock, so device clock drift does not matter |
-| `TRUST_PROXY_HOPS` | 1 | Reverse proxies in front of the app (Azure App Service, Render, etc.: 1). Set to `0` if the app is exposed directly with no proxy, otherwise clients can spoof their IP. |
+Every setting is checked at startup. An invalid value stops the app with `Invalid configuration:` and the setting's name in the log (App Service > Log stream), instead of running with silently wrong limits.
+
+| Variable | Default | Allowed | Purpose |
+|---|---|---|---|
+| `PORT` | 8080 | 0 to 65535 | Listen port (App Service sets it) |
+| `MAX_ITEMS` | 10000 | 1 to 1,000,000 | Max secrets held at once |
+| `RATE_LIMIT_PER_MIN` | 30 | 1 to 100,000 | Create/check/read requests per client per minute |
+| `MAX_TOTAL_MB` | 100 | 1 to 16384 | Max total ciphertext held in memory |
+| `TRUST_PROXY_HOPS` | 1 | 0 to 5 | Reverse proxies in front of the app (Azure App Service, Render, etc.: 1; Cloudflare in front of Azure: 2). Set `0` only if the app is exposed directly with no proxy, otherwise clients can spoof their IP |
+| `HTTPS_REDIRECT` | on | 1/0, true/false, on/off, yes/no | Set to `0` to stop the app redirecting plain HTTP (only if another layer guarantees HTTPS) |
+| `OPERATOR_NAME` | (placeholder shown) | text | Your organisation name, shown on the policy pages |
+| `CONTACT_EMAIL` | (placeholder shown) | email | Privacy / legal contact shown on the policy pages |
+| `JURISDICTION` | (placeholder shown) | text | Governing law in the Terms of Use, e.g. `England and Wales` |
+| `POLICY_EFFECTIVE_DATE` | (placeholder shown) | text | Date shown at the top of each policy, e.g. `10 October 2026` |
+| `HOSTING_PROVIDER` | Microsoft Azure | text | Hosting provider named in the policies (add region if relevant, e.g. `Microsoft Azure (UK South)`) |
+| `LOG_RETENTION` | 30 days | text | Retention you commit to if you enable platform access logs |
+| `ALTCHA_HMAC_SECRET` | random per start | 32+ characters | Signs bot-check challenges. Optional on a single instance; set a long random value (e.g. `openssl rand -hex 32`) to keep challenges valid across restarts. Never commit it |
+| `ALTCHA_TTL_SECONDS` | 600 | 30 to 3600 | How long a bot-check challenge stays valid. The browser renews after 80% of it, timed on its own clock, so device clock drift does not matter. Shown on the policy pages |
+| `ALTCHA_COST` | 1000 | 1 to 1,000,000 | Bot-check difficulty (PBKDF2 iterations per attempt) |
+| `ALTCHA_COUNTER_MIN` / `ALTCHA_COUNTER_MAX` | 1000 / 3000 | 1 to 100,000,000; min not above max | Range of attempts needed; with the default cost about 1-2 s of work in a typical browser |
 
 ## Reporting security issues
 
