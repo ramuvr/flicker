@@ -26,7 +26,8 @@ jobs:
 
   deploy:
     needs: test
-    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    # Skipped (not failed) until the Azure settings are added; see README.
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main' && vars.AZURE_WEBAPP_NAME != ''
     runs-on: ubuntu-latest
     environment: production
     permissions:
