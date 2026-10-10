@@ -1,5 +1,5 @@
-# Keeps the pinned GitHub Actions SHAs and Docker base image digest up to date
-# by opening a pull request when a new version is released.
+# Keeps the pinned GitHub Actions SHAs, Docker base image digest and npm packages
+# up to date by opening a pull request when a new version is released.
 version: 2
 updates:
   - package-ecosystem: github-actions
@@ -10,6 +10,12 @@ updates:
     directory: /
     schedule:
       interval: weekly
+    ignore:
+      # Node major versions are a deliberate choice: stay on a long-term-support
+      # line (even numbers; odd ones such as 25 reach end of life after ~8 months).
+      # Digest and minor/patch updates within the current major still arrive.
+      - dependency-name: node
+        update-types: ["version-update:semver-major"]
   - package-ecosystem: npm
     directory: /
     schedule:

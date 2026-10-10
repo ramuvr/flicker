@@ -26,7 +26,7 @@ Other protections:
 - Abuse limits: ~190 KB per secret, 100 MB total in memory, 10,000 items, 30 requests/min per client (IPv6 grouped per /64), 10s header / 30s request timeouts.
 - Rate limiting reads only the proxy-appended end of `X-Forwarded-For`, so clients cannot spoof their address.
 - Bot protection on secret creation: ALTCHA proof-of-work (self-hosted, no third party, no cookies, interaction tracking off). Each solved challenge works once and expires after 10 minutes by default (`ALTCHA_TTL_SECONDS`); the policy pages show the configured value.
-- Supply chain: only `altcha` and `altcha-lib` (exact versions, lockfile, `npm audit` in CI); GitHub Actions pinned to commit SHAs and the Docker base image pinned to a digest; Dependabot proposes updates.
+- Supply chain: only `altcha` and `altcha-lib` (exact versions, lockfile, `npm audit` in CI); GitHub Actions pinned to commit SHAs and the Docker base image pinned to a digest; Dependabot proposes updates. Node.js major versions are changed deliberately and only to long-term-support releases (Dependabot does not propose them); runtime is Node 22 everywhere: App Service, CI and the Docker image.
 
 ## Security testing
 
