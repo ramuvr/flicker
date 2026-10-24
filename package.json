@@ -13,7 +13,7 @@
   },
   "license": "MIT",
   "dependencies": {
-    "altcha": "3.3.0",
+    "altcha": "3.4.1",
     "altcha-lib": "2.6.0"
   }
 }
